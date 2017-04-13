@@ -1,0 +1,559 @@
+\section*{Приложение А - Исходный код ИС <<Шерлок>>}
+\addcontentsline{toc}{section}{Приложение А - Исходный код ИС <<Шерлок>>}
+
+    \lstset{ %
+        backgroundcolor=\color{white},   % choose the background color
+        basicstyle=\scriptsize,        % size of fonts used for the code
+        breaklines=true,                 % automatic line breaking only at whitespace
+        captionpos=b,                    % sets the caption-position to bottom
+        commentstyle=\color{mygreen},    % comment style
+        escapeinside={\%*}{*)},          % if you want to add LaTeX within your code
+        keywordstyle=\color{blue},       % keyword style
+        stringstyle=\color{mymauve},     % string literal style
+        numbers=left,               % где поставить нумерацию строк (слева\справа)
+        numbersep=-15pt                % как далеко отстоят номера строк от подсвечиваемого кода
+    }
+
+    \begin{lstlisting}[language=java]
+        public class SourceCode {
+            @Id
+            private String id;
+            @NotNull
+            private String sourceText;
+            @NotNull
+            private String language;
+            private List<String> tokens;
+            private String username;
+            private String plagiarismProbability;
+
+            public String getId() { return id; }
+            public void setId(String id) { this.id = id; }
+            public String getSourceText() { return sourceText; }
+            public void setSourceText(String sourceText) { this.sourceText = sourceText; }
+            public String getLanguage() { return language; }
+            public void setLanguage(String language) { this.language = language; }
+            public List<String> getTokens() { return tokens; }
+            public void setTokens(List<String> tokens) { this.tokens = tokens; }
+            public String getUsername() { return username; }
+            public void setUsername(String username) { this.username = username; }
+            public String getPlagiarismProbability() { return plagiarismProbability; }
+            public void setPlagiarismProbability(String plagiarismProbability) { this.plagiarismProbability = plagiarismProbability; }
+            @Override
+            public String toString() {
+                return "SourceCode{" +
+                        "sourceText='" + sourceText + '\'' +
+                        ", id='" + id + '\'' +
+                        ", language='" + language + '\'' +
+                        ", tokens=" + tokens +
+                        ", username='" + username + '\'' +
+                        ", plagiarismProbability=" + plagiarismProbability +
+                        '}';
+            }
+        }
+    \end{lstlisting}
+
+    \newpage
+    \begin{lstlisting}[language=java]                
+        public interface IAlgorithm {
+            Float process(List<String> p, List<String> t);
+            String getName();
+            Float getWeight();
+        }
+    \end{lstlisting}
+
+    \begin{lstlisting}[language=java]                
+        public interface IPreprocessing {
+            String process(String sourceText);
+        } 
+    \end{lstlisting}
+
+
+    \begin{lstlisting}[language=java]                
+        public interface ITokenization {
+            Optional<List<String>> process(String sourceText);
+        }
+    \end{lstlisting}
+
+    \newpage
+    \begin{lstlisting}[language=java]                
+            public class JavaTokenization implements ITokenization {
+
+            private static Logger log = Logger.getLogger(JavaTokenization.class.getName());
+
+            @Override
+            public Optional<List<String>> process(String sourceCode) {
+                try {
+                    ANTLRInputStream sourceCodeInputStream = new ANTLRInputStream(stringToInputStream(sourceCode));
+                    Lexer lexer = new JavaLexer(sourceCodeInputStream);
+                    CommonTokenStream commonTokenStream = new CommonTokenStream(lexer);
+                    JavaParser parser = new JavaParser(commonTokenStream);
+                    IJavaListener listener = new JavaListener();
+                    parser.addParseListener(listener);
+                    parser.addErrorListener(new BaseErrorListener() {
+                        @Override
+                        public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line, int charPositionInLine, String msg, RecognitionException e) {
+                            throw e;
+                        }
+                    });
+                    parser.compilationUnit();
+                    return Optional.of(listener.getTokens());
+                } catch (IOException ioe) {
+                    log.warning("Error create new ANTLRInputStream(...)");
+                    return Optional.empty();
+                } catch (RecognitionException re) {
+                    log.warning("Recognition error (source code : " + sourceCode.replace("\n", " "));
+                    return Optional.empty();
+                } catch (Exception e) {
+                    log.warning("Unknown error (source code : " + sourceCode.replace("\n", " "));
+                    return Optional.empty();
+                }
+            }
+
+            private InputStream stringToInputStream(String string) {
+                return new ByteArrayInputStream(string.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+    \end{lstlisting}
+
+
+    \newpage
+    \begin{lstlisting}[language=java]
+        public class RKRGSTAlgorithm implements IAlgorithm {
+            private static final Integer MINIMUM_MATCH_LENGTH = 3;        
+            private static final Integer INITIAL_SEARCH_LENGTH = 20;
+            List<List<MatchValue>> all_matches = new ArrayList<>();
+            List<MatchValue> tiles = new ArrayList<>();
+
+            @Override
+            public String getName() {
+                return "RKR-GST";
+            }
+
+            @Override
+            public Float getWeight() {
+                return 0.5f;
+            }
+
+            @Override
+            public Float process(List<String> p, List<String> t) {
+                    Integer search_length = INITIAL_SEARCH_LENGTH;
+                    boolean stop = false;
+                    while (!stop) {
+                        Integer L_max = scanPattern(search_length, p, t);
+                        if (L_max > 2 * search_length)
+                            search_length = L_max;
+                        else {
+                            markStrings(p, t);
+                            if (search_length > 2 * MINIMUM_MATCH_LENGTH)
+                                search_length = search_length / 2;
+                            else if (search_length > MINIMUM_MATCH_LENGTH)
+                                search_length = MINIMUM_MATCH_LENGTH;
+                            else
+                                stop = true;
+                        }
+                    }
+                Float similarity = similarity(p, t, tiles);
+                if (similarity > 1.0f){
+                    return 1.0f;
+                } else {
+                    return similarity;
+                }
+            }
+
+            public Integer scanPattern(Integer search_length, List<String> P, List<String> T) {
+                Integer longest_max_match = 0;
+                List<MatchValue> matches = new ArrayList<>();
+                GSTHashTable hash_table = new GSTHashTable();
+                Integer t_position = 0;
+                Boolean no_next_tile = false;
+                Integer distance;
+                while (t_position < T.size()) {
+                    if (isMarked(T.get(t_position))) {
+                        t_position ++;
+                        continue;
+                    }
+                    Optional<Integer> distance_to_next_tile = distanceToNextTile(t_position, T);
+                    if (distance_to_next_tile.isPresent())
+                        distance = distance_to_next_tile.get();
+                    else {
+                        distance = T.size() - t_position;
+                        no_next_tile = true;
+                    }
+                    if (distance < search_length) {
+                        if (no_next_tile)
+                            t_position = T.size();
+                        else {
+                            if (jumpToNextUnmarkedTokenAfterTile(t_position, T).isPresent())
+                                t_position = jumpToNextUnmarkedTokenAfterTile(t_position, T).get();
+                            else
+                                t_position = T.size();
+                        }
+                    } else {
+                        String t_substring = T.subList(t_position, t_position + search_length).stream().collect(Collectors.joining());
+                        hash_table.put(hash(t_substring), t_position);
+                        t_position ++;
+                    }
+                }
+                no_next_tile = false;
+                Integer p_position = 0;
+                while (p_position < P.size()) {
+                    if (isMarked(P.get(p_position))) {
+                        p_position ++;
+                        continue;
+                    }
+                    Optional<Integer> distance_to_next_tile = distanceToNextTile(p_position, P);
+                    if (distance_to_next_tile.isPresent())
+                        distance = distance_to_next_tile.get();
+                    else {
+                        distance = P.size() - p_position;
+                        no_next_tile = true;
+                    }
+                    if (distance < search_length) {
+                        if (no_next_tile)
+                            p_position = P.size();
+                        else {
+                            if(jumpToNextUnmarkedTokenAfterTile(p_position, P).isPresent())
+                                p_position = jumpToNextUnmarkedTokenAfterTile(p_position, P).get();
+                            else {
+                                p_position = P.size();
+                            }
+                        }
+                    } else {
+                        String p_substring = P.subList(p_position, p_position + search_length).stream().collect(Collectors.joining());
+                        ArrayList<Integer> positions = hash_table.get(hash(p_substring));
+                        for (Integer position : positions) {
+                            String t_substring = T.subList(position, position + search_length).stream().collect(Collectors.joining());
+                            if (t_substring.equals(p_substring)) {
+                                t_position = position;
+                                Integer k = search_length;
+                                while (p_position + k < P.size() && t_position + k < T.size()
+                                        && P.get(p_position + k).equals(T.get(t_position + k))
+                                        && isUnmarked(P.get(p_position + k))
+                                        && isUnmarked(T.get(t_position + k)))
+                                    k ++;
+                                if (k > 2 * search_length)
+                                    return k;
+                                else {
+                                    if (longest_max_match < search_length)
+                                        longest_max_match = search_length;
+                                    matches.add(new MatchValue(p_position, t_position, k));
+                                }
+                            }
+                        }
+                        p_position ++;
+                    }
+                }
+                if (!matches.isEmpty()){
+                    all_matches.add(matches);
+                }
+                return longest_max_match;
+            }
+
+            private void markStrings(List<String> p, List<String> t) {
+                all_matches.forEach(matches -> matches.stream().filter(match -> !isOccluded(match, tiles)).forEach(match -> {
+                    IntStream.range(0, match.getLengthMatch()).forEach(i -> {
+                        Integer pattern_position = match.getPatternPosition() + i;
+                        Integer text_position = match.getTextPosition() + i;
+                        p.set(pattern_position, markToken(p.get(pattern_position)));
+                        t.set(text_position, markToken(t.get(text_position)));
+                    });
+                    tiles.add(match);
+                }));
+                all_matches.clear();
+            }
+
+            private static Long hash(String string) {
+                AtomicLong hash = new AtomicLong(0);
+                string.chars().forEach(symbol -> hash.set((hash.intValue() << 1) + symbol));
+                return hash.longValue();
+            }
+
+            private Boolean isUnmarked(String string) {
+                return string.length() > 0 && string.charAt(0) != '*';
+            }
+
+            private Boolean isMarked(String string) {
+                return (!isUnmarked(string));
+            }
+
+            private String markToken(String string) {
+                return "*" + string;
+            }
+
+            private Boolean isOccluded(MatchValue match_value, List<MatchValue> tiles) {
+                return tiles.stream().anyMatch(tile -> (tile.getPatternPosition() + tile.getLengthMatch() == match_value.getPatternPosition() + match_value.getLengthMatch()) && (tile.getTextPosition() + tile.getLengthMatch() == match_value.getTextPosition() + match_value.getLengthMatch()));
+            }
+
+            private Optional<Integer> distanceToNextTile(Integer current_position, List<String> tokens) {
+                Integer distance_to_next_tile = (int) StreamUtils.takeWhile(tokens.stream().skip(current_position + 1), this::isUnmarked).count();
+                return current_position + distance_to_next_tile + 1 != tokens.size() ? Optional.of(distance_to_next_tile + 1) : Optional.empty();
+            }
+
+            private Optional<Integer> jumpToNextUnmarkedTokenAfterTile(Integer current_position, List<String> tokens) {
+                Optional<Integer> position_after_next_tile = Optional.empty();
+                Optional<Integer> distance_to_next_tile = distanceToNextTile(current_position, tokens);
+                if (distance_to_next_tile.isPresent()) {
+                    Integer count_marked_tokens = (int) StreamUtils.takeWhile(tokens.stream().skip(current_position + distance_to_next_tile.get() + 1), this::isMarked).count();
+                    if (current_position + distance_to_next_tile.get() + count_marked_tokens + 1 <= tokens.size() - 1) {
+                        position_after_next_tile = Optional.of(current_position + distance_to_next_tile.get() + count_marked_tokens + 1);
+                    }
+                }
+                return position_after_next_tile;
+            }
+
+            private Float similarity(List<String> p, List<String> t, List<MatchValue> tiles) {
+                return (float) (2 * coverage(tiles)) / (float) (p.size() + t.size());
+            }
+
+            private Integer coverage(List<MatchValue> tiles) {
+                return tiles.stream().collect(Collectors.summingInt(MatchValue::getLengthMatch));
+            }
+        }
+        
+    \end{lstlisting}  
+
+    \newpage
+    \begin{lstlisting}[language=java]
+        @Configuration
+        @ComponentScan
+        @RestController
+        @RequestMapping(value = "/sherlock/api")
+        public class SimilarityController {
+            private static Logger log = Logger.getLogger(SimilarityController.class.getName());
+            @Autowired
+            private SimilarityService similarityService;
+            @Autowired
+            private SourceCodeRepository sourceCodeRepository;
+
+            @RequestMapping(method = RequestMethod.POST, value = "/similarity/sync")
+            public ResponseEntity<ApiResponse> syncSimilarity(@Valid @RequestBody SourceCode sourceCode, Principal user) {
+                log.info(String.join(" : ", "/sherlock/api/similarity/sync", user.getName(), sourceCode.toString()));
+                sourceCode.setUsername(user.getName());
+                Optional<Float> plagiarismProbability = similarityService.syncProcess(sourceCode);
+                if (plagiarismProbability.isPresent()) {
+                    return new ResponseEntity<>(new ApiResponse(plagiarismProbability.get().toString()), HttpStatus.OK);
+                } else {
+                    return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+                }
+            }
+
+            @RequestMapping(method = RequestMethod.POST, value = "/similarity/async")
+            public ResponseEntity<ApiResponse> asyncSimilarity(@Valid @RequestBody SourceCode sourceCode, Principal user) {
+                log.info(String.join(" : ", "/sherlock/api/similarity/async", user.getName(), sourceCode.toString()));
+                sourceCode.setUsername(user.getName());
+                String uuid = UUID.randomUUID().toString();
+                similarityService.asyncProcess(sourceCode, uuid);
+                return new ResponseEntity<>(new ApiResponse(uuid), HttpStatus.OK);
+            }
+
+            @RequestMapping(method = RequestMethod.GET, value = "/similarity/result/{uuid}")
+            public ResponseEntity<ApiResponse> resultSimilarity(@PathVariable String uuid) {
+                SourceCode search_source_code = sourceCodeRepository.findOne(uuid);
+                if (search_source_code != null) {
+                    return new ResponseEntity<>(new ApiResponse(search_source_code.getPlagiarismProbability()), HttpStatus.OK);
+                } else {
+                    return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+                }
+            }
+
+            @InitBinder("sourceCode")
+            protected void initBinder(WebDataBinder binder) {
+                binder.setValidator(new SourceCodeValidator());
+            }
+        }
+
+    \end{lstlisting}
+
+    \newpage
+    \begin{lstlisting}[language=java]
+        @RestController
+        @RequestMapping(value = "/sherlock/api")
+        public class UserController {
+
+            private AccountService accountService;
+
+            @Autowired
+            public UserController(AccountService accountService) {
+                this.accountService = accountService;
+            }
+
+            @RequestMapping(method = RequestMethod.POST, value = "/user/create")
+            public ApiResponse createUser(@Valid @RequestBody Account account) {
+                if (accountService.create(account).isPresent()) {
+                    return new ApiResponse("OK");
+                } else {
+                    return new ApiResponse("ERROR");
+                }
+            }
+
+            @InitBinder
+            protected void initBinder(WebDataBinder binder) {
+                binder.setValidator(new AccountValidator());
+            }
+        }
+    \end{lstlisting}
+
+    \newpage
+    \begin{lstlisting}[language=java]
+        @Service
+        public class AccountServiceImpl implements AccountService {
+
+            private AccountRepository accountRepository;
+
+            @Autowired
+            public AccountServiceImpl(AccountRepository accountRepository) {
+                this.accountRepository = accountRepository;
+            }
+
+            @Override
+            public Optional<Account> getAccountByUsername(String username) {
+                return Optional.ofNullable(accountRepository.findByUsername(username));
+            }
+
+            @Override
+            public Optional<Account> create(Account account) {
+                if (accountRepository.findByUsername(account.getUsername()) == null) {
+                    account.setPasswordHash(new BCryptPasswordEncoder().encode(account.getPassword()));
+                    account.setRole(Role.ROLE_USER);
+                    return Optional.of(accountRepository.save(account));
+                } else {
+                    return Optional.empty();
+                }
+            }
+        }    
+    \end{lstlisting}
+
+    \newpage
+    \begin{lstlisting}[language=java]
+        public interface AccountRepository extends MongoRepository<Account, String> {
+            Account findByUsername(String username);
+        }
+    \end{lstlisting}
+
+    \begin{lstlisting}[language=java]
+        public class ApiResponse {
+            private String message;
+
+            public ApiResponse() { }
+
+            public ApiResponse(String message) {
+                this.message = message;
+            }
+            public String getMessage() {
+                return message;
+            }
+        }
+    \end{lstlisting}
+
+    \newpage
+    \begin{lstlisting}[language=java]
+        public class Account {
+            @Id
+            private String id;
+            private String username;
+            @Transient
+            private String password;
+            private String passwordHash;
+            private Role role;
+
+            public Account() { }
+            public Account(String username, String passwordHash, Role role) {
+                this.username = username;
+                this.passwordHash = passwordHash;
+                this.role = role;
+            }
+
+            public String getId() {
+                return id;
+            }
+            public void setId(String id) {
+                this.id = id;
+            }
+            public String getUsername() {
+                return username;
+            }
+            public void setUsername(String username) {
+                this.username = username;
+            }
+            public String getPassword() {
+                return password;
+            }
+            public void setPassword(String password) {
+                this.password = password;
+            }
+            public String getPasswordHash() {
+                return passwordHash;
+            }
+            public void setPasswordHash(String passwordHash) {
+                this.passwordHash = passwordHash;
+            }
+            public Role getRole() {
+                return role;
+            }
+            public void setRole(Role role) {
+                this.role = role;
+            }
+        }
+    \end{lstlisting}
+
+    \newpage
+    \begin{lstlisting}[language=java]
+        @EnableWebSecurity
+        @Configuration
+        @Order(SecurityProperties.ACCESS_OVERRIDE_ORDER)
+        public class SecurityConfig extends WebSecurityConfigurerAdapter {
+            @Autowired
+            UserDetailsService userDetailsService;
+            @Override
+            protected void configure(HttpSecurity http) throws Exception {
+                http
+                    .csrf().disable()
+                    .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                    .and()
+                    .authorizeRequests()
+                    .antMatchers("/sherlock/api/user/**").hasAuthority(Role.ROLE_ADMIN.name())
+                    .antMatchers("/sherlock/api/check/**").hasAuthority(Role.ROLE_USER.name())
+                    .and()
+                    .httpBasic();
+            }
+
+            @Override
+            public void configure(AuthenticationManagerBuilder auth) throws Exception {
+                auth
+                        .userDetailsService(userDetailsService)
+                        .passwordEncoder(new BCryptPasswordEncoder());
+            }
+
+            @Bean
+            UserDetailsService getUserDetailsService() {
+                return new UserDetailsService() {
+                    @Autowired
+                    private AccountService accountService;
+
+                    @Override
+                    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+                        Account account = accountService.getAccountByUsername(username)
+                                .orElseThrow(() -> new UsernameNotFoundException(String.format("User with username=%s was not found", username)));
+
+                        return new User(account.getUsername(),
+                                        account.getPasswordHash(),
+                                        true,
+                                        true,
+                                        true,
+                                        true,
+                                        AuthorityUtils.createAuthorityList(account.getRole().name()));
+                    }
+                };
+            }
+        }
+    \end{lstlisting}    
+
+    \newpage
+    \begin{lstlisting}[language=java]
+        @SpringBootApplication
+        public class Application {
+            public static void main(String[] args) {
+                SpringApplication.run(Application.class, args);
+            }
+        }
+    \end{lstlisting}

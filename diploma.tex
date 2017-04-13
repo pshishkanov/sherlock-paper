@@ -1,0 +1,89 @@
+\documentclass[russian, 14pt, utf8, floatsection, equationsection, simple]{eskdtext}
+
+% Рисунки в документе
+\usepackage{graphicx}
+
+% Путь до папки с рисунками
+\graphicspath{ {images/} }
+
+% Русские буквы в формулах
+\usepackage{mathtext}
+
+% Кодировка шрифтов в pdf
+\usepackage{cmap} 
+
+% Настройка шрифтов
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+
+\usepackage[linesnumbered,boxed]{algorithm2e}
+
+\usepackage{enumitem}
+\setlist{nolistsep}
+
+ % Полуторный интервал
+\linespread{1.4}
+
+% Математические дополнения от АМС
+\usepackage{amssymb, amsfonts, amsmath, amsthm}
+
+\ESKDdocName{Информационная система дистанционного обучения. Модуль проверки на плагиат.}
+% "Разраб." в штампе на листе содержания
+\ESKDauthor{\scriptsize Шишканов П.А.}
+% "Пров."  в штампе на листе содержания
+\ESKDchecker{\scriptsize Шевченко Д.В.}
+% "Н. контр." в штампе на листе содержания
+\ESKDnormContr{\scriptsize Макаров Р.И.}
+%  "Увт." в штампе на листе содержания
+\ESKDapprovedBy{}
+\ESKDdate{2015/06/08}
+% Шифр
+\ESKDsignature{ВлГУ.090302.31.3.00 ПЗ}
+% Литеры
+\ESKDletter{}{У}{}
+
+\usepackage{array}
+\usepackage{tabularx}
+
+\usepackage{color} %% это для отображения цвета в коде
+\usepackage{listings} %% собственно, это и есть пакет listings
+
+\definecolor{mygreen}{rgb}{0,0.6,0}
+\definecolor{mygray}{rgb}{0.5,0.5,0.5}
+\definecolor{mymauve}{rgb}{0.58,0,0.82}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+ 
+\renewcommand{\ESKDtheTitleFieldX}{Владимир\ESKDtheYear~г.}
+
+\ESKDsectStyle{section}{\normalsize} % Заголовки разделов обычным шрифтом 
+\ESKDsectStyle{subsection}{\normalsize} % Заголовки разделов обычным шрифтом
+\ESKDsectStyle{subsubsection}{\normalsize} % Заголовки подразделов обычным шрифтом
+
+\newcommand{\verbatimfont}[1]{\def\verbatim@font{#1}}
+
+\makeatletter
+\let\oldl@section\l@section
+\def\l@section#1#2{\oldl@section{\normalfont#1}{\normalfont#2}}
+\makeatother
+
+\begin{document}
+	% Титульный лист (отдельно)
+	% Лист задания (отдельно)
+	% Аннотация (отдельно)
+    \tableofcontents
+    \include{introduce}
+    \include{chapter-i}
+	\include{chapter-ii}
+	\include{chapter-iii}
+	\include{chapter-iv}
+	\include{chapter-v}
+	\include{conclusion} 		
+	\bibliographystyle{bibliography/utf8gost705u}
+	\bibliography{bibliography/biblio}
+	\include{appendix-a}
+	\include{appendix-b}			
+\end{document}
